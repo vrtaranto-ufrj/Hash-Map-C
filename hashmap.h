@@ -1,11 +1,13 @@
 #pragma once
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define M 5013
 
 typedef struct HashMapStruct HashMap;
 typedef struct ListNodeStruct ListNode;
+typedef struct HashMapReturnStruct HashMapReturn;
 
 struct ListNodeStruct {
     int key;
@@ -16,6 +18,11 @@ struct ListNodeStruct {
 struct HashMapStruct {
     size_t len;
     ListNode **array;
+};
+
+struct HashMapReturnStruct {
+    int value;
+    bool found;
 };
 
 HashMap create_hashmap(size_t len) {
@@ -53,14 +60,56 @@ void add_hashmap(HashMap *hashmap, int key, int value) {
     hashmap->array[index] = newnode;
 }
 
-int *get_hashmap(HashMap *hashmap, int key) {
+HashMapReturn get_hashmap(HashMap *hashmap, int key) {
     size_t index = hash_func(key, hashmap->len);
 
     for (ListNode *node = hashmap->array[index]; node; node = node->next) {
         if (node->key == key) {
-            return &node->value;
+            return (HashMapReturn){
+                .found = true,
+                .value = node->value
+            };
         }
     }
 
-    return NULL;
+    return (HashMapReturn){
+        .found = false
+    };
+}
+
+HashMapReturn pop_hashmap(HashMap *hashmap, int key) {
+    size_t index = hash_func(key, hashmap->len);
+    HashMapReturn return_value = {0};
+
+    ListNode *node = hashmap->array[index];
+
+    if (!node) {
+        return return_value;
+    }
+
+    if (node->key == key) {
+        hashmap->array[index] = node->next;
+        return_value.found = true;
+        return_value.value = node->value;
+        free(node);
+        
+        return return_value;
+    }
+
+    ListNode *lastnode = node;
+    node = node->next;
+    
+    for (; node; node = node->next) {
+        if (node->key == key) {
+            lastnode->next = node->next;
+            return_value.found = true;
+            return_value.value = node->value;
+            free(node);
+
+            break;
+        }
+        lastnode = node;
+    }
+
+    return return_value;
 }
