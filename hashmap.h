@@ -79,37 +79,21 @@ HashMapReturn get_hashmap(HashMap *hashmap, int key) {
 
 HashMapReturn pop_hashmap(HashMap *hashmap, int key) {
     size_t index = hash_func(key, hashmap->len);
-    HashMapReturn return_value = {0};
 
-    ListNode *node = hashmap->array[index];
-
-    if (!node) {
-        return return_value;
-    }
-
-    if (node->key == key) {
-        hashmap->array[index] = node->next;
-        return_value.found = true;
-        return_value.value = node->value;
-        free(node);
-        
-        return return_value;
-    }
-
-    ListNode *lastnode = node;
-    node = node->next;
-    
-    for (; node; node = node->next) {
+    for (ListNode **pp = &hashmap->array[index]; *pp; pp = &(*pp)->next) {
+        ListNode *node = *pp;
         if (node->key == key) {
-            lastnode->next = node->next;
-            return_value.found = true;
-            return_value.value = node->value;
+            *pp = node->next;
             free(node);
 
-            break;
+            return (HashMapReturn){
+                .found = true,
+                .value = node->value
+            };
         }
-        lastnode = node;
     }
 
-    return return_value;
+    return (HashMapReturn){
+        .found = false
+    };
 }

@@ -9,7 +9,7 @@ int main(int argc, char const *argv[]) {
     add_hashmap(&hashmap, 10, 1);
     add_hashmap(&hashmap, 133, 19);
 
-    HashMapReturn a = pop_hashmap(&hashmap, 10);
+    HashMapReturn a = get_hashmap(&hashmap, 10);
 
     return 0;
 }
