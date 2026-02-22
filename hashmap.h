@@ -5,22 +5,33 @@
 #include <stdint.h>
 #include <string.h>
 
-#define FNV_PRIME        0x00000100000001b3UL
-#define FNV_OFFSET_BASIS 0xcbf29ce484222325UL
+#define FNV_PRIME          0x00000100000001b3UL
+#define FNV_OFFSET_BASIS   0xcbf29ce484222325UL
+
+#define RESIZE_THRSHOLD    70UL
+
+#define TOMBSTONE_FLAG     0b00000001
+#define USED_FLAG          0b00000010
+
+#define is_tombstone(item_flag) (((item_flag) & TOMBSTONE_FLAG) != 0)
+#define is_used(item_flag)      (((item_flag) & USED_FLAG) != 0)
+#define is_valid(item_flag)     (!((item_flag) & (TOMBSTONE_FLAG | USED_FLAG)))
+
 
 typedef struct HashMapStruct HashMap;
-typedef struct ListNodeStruct ListNode;
+typedef struct ItemStruct Item;
 typedef struct HashMapReturnStruct HashMapReturn;
 
-struct ListNodeStruct {
+struct ItemStruct {
     char* key;
     int value;
-    ListNode* next;
+    uint8_t flags;
 };
 
 struct HashMapStruct {
+    Item* array;
     size_t len;
-    ListNode** array;
+    size_t capacity;
 };
 
 struct HashMapReturnStruct {
@@ -28,40 +39,36 @@ struct HashMapReturnStruct {
     bool found;
 };
 
-HashMap create_hashmap(size_t len) {
+HashMap create_hashmap(size_t capacity) {
     return (HashMap) {
-        .len = len,
-            .array = calloc(len, sizeof(ListNode*))
+        .capacity = capacity,
+            .array = calloc(capacity, sizeof(Item)),
+            .len = 0
     };
 }
 
 void free_hashmap(HashMap* hashmap) {
     for (size_t i = 0; i < hashmap->len; i++) {
-        ListNode* nextnode = NULL;
-        for (ListNode* node = hashmap->array[i]; node; node = nextnode) {
-            nextnode = node->next;
-            free(node->key);
-            free(node);
-        }
+        Item item = hashmap->array[i];
+
+        free(item.key);
     }
     free(hashmap->array);
     hashmap->len = 0;
+    hashmap->capacity = 0;
     hashmap->array = NULL;
 }
 
-ListNode* alloc_list_node(const char* key, int value) {
-    ListNode* node = malloc(sizeof(ListNode));
-    size_t key_len = strlen(key);
-
-    node->key = malloc(sizeof(char) * key_len + 1);
-    strcpy(node->key, key);
-    node->value = value;
-    node->next = NULL;
-
-    return node;
+bool resize_needed(HashMap* hashmap) {
+    return hashmap->len * 100UL >= RESIZE_THRSHOLD * hashmap->capacity * 100UL;
 }
 
-uint64_t hash_func(const char* key, uint64_t len) {
+void resize_hashmap(HashMap* hashmap) {
+    return;
+}
+
+
+uint64_t hash_func(const char* key, uint64_t capacity) {
     uint64_t hash_value = FNV_OFFSET_BASIS;
 
     for (uint8_t c = 0; c < strlen(key); c++) {
@@ -69,32 +76,53 @@ uint64_t hash_func(const char* key, uint64_t len) {
         hash_value *= FNV_PRIME;
     }
 
-    return hash_value & (len - 1);
+    return hash_value & (capacity - 1);
 }
 
 void add_hashmap(HashMap* hashmap, const char* key, int value) {
-    size_t index = hash_func(key, hashmap->len);
+    if (resize_needed(hashmap)) {
+        resize_hashmap(hashmap);
+    }
+    hashmap->len++;
 
-    for (ListNode* node = hashmap->array[index]; node; node = node->next) {
-        if (strcmp(node->key, key) == 0) {
-            node->value = value;
+    size_t index = hash_func(key, hashmap->capacity);
+
+    for (size_t i = 0; i < hashmap->capacity; i++) {
+        Item* item = &hashmap->array[(i + index) % hashmap->capacity];
+
+        if (is_tombstone(item->flags)) {
+            continue;
+        }
+
+        if (!is_used(item->flags)) {
+            item->value = value;
+            item->flags |= USED_FLAG;
+            item->key = malloc(strlen(key) + 1);
+            strcpy(item->key, key);
+            return;
+        }
+        if (strcmp(item->key, key) == 0) {
+            item->value = value;
+            item->flags |= USED_FLAG;
             return;
         }
     }
-
-    ListNode* newnode = alloc_list_node(key, value);
-    newnode->next = hashmap->array[index];
-    hashmap->array[index] = newnode;
 }
 
 HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
-    size_t index = hash_func(key, hashmap->len);
+    size_t index = hash_func(key, hashmap->capacity);
 
-    for (ListNode* node = hashmap->array[index]; node; node = node->next) {
-        if (strcmp(node->key, key) == 0) {
+    for (size_t i = 0; i < hashmap->capacity; i++) {
+        Item item = hashmap->array[(i + index) % hashmap->capacity];
+
+        if (is_tombstone(item.flags)) {
+            break;
+        }
+    
+        if (strcmp(item.key, key) == 0) {
             return (HashMapReturn) {
                 .found = true,
-                    .value = node->value
+                    .value = item.value
             };
         }
     }
@@ -105,19 +133,26 @@ HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
 }
 
 HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
-    size_t index = hash_func(key, hashmap->len);
+    size_t index = hash_func(key, hashmap->capacity);
+    hashmap->len--;
 
-    for (ListNode** pp = &hashmap->array[index]; *pp; pp = &(*pp)->next) {
-        ListNode* node = *pp;
-        if (strcmp(node->key, key) == 0) {
-            *pp = node->next;
-            free(node->next);
-            free(node);
+    for (size_t i = 0; i < hashmap->len; i++) {
+        Item *item = &hashmap->array[(i + index) % hashmap->capacity];
 
-            return (HashMapReturn) {
+        if (is_tombstone(item->flags)) {
+            break;
+        }
+    
+        if (strcmp(item->key, key) == 0) {
+            item->flags = TOMBSTONE_FLAG;
+            
+            HashMapReturn ret = {
                 .found = true,
-                    .value = node->value
+                    .value = item->value
             };
+            free(item->key);
+
+            return ret;
         }
     }
 
