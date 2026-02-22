@@ -103,8 +103,9 @@ void _resize_hashmap(HashMap* hashmap) {
 
 uint64_t _hash_func(const char* key, uint64_t capacity) {
     uint64_t hash_value = FNV_OFFSET_BASIS;
+    size_t len = strlen(key);
 
-    for (size_t c = 0; c < strlen(key); c++) {
+    for (size_t c = 0; c < len; c++) {
         hash_value ^= key[c];
         hash_value *= FNV_PRIME;
     }
