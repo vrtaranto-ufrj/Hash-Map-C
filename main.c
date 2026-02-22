@@ -3,7 +3,7 @@
 #include "hashmap.h"
 
 int main(int argc, char const *argv[]) {
-    HashMap hashmap = create_hashmap(8);
+    HashMap hashmap = create_hashmap();
     add_hashmap(&hashmap, "1", 1);
     add_hashmap(&hashmap, "2", 2);
     add_hashmap(&hashmap, "5", 5);

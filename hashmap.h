@@ -8,6 +8,7 @@
 #define FNV_PRIME          0x00000100000001b3UL
 #define FNV_OFFSET_BASIS   0xcbf29ce484222325UL
 
+#define INITIAL_CAPACITY   16ULL
 #define RESIZE_THRSHOLD    70UL
 
 #define TOMBSTONE_FLAG     0b00000001
@@ -38,7 +39,7 @@ struct HashMapReturnStruct {
     bool found;
 };
 
-HashMap create_hashmap(size_t capacity);
+HashMap create_hashmap();
 void free_hashmap(HashMap* hashmap);
 
 void add_hashmap(HashMap* hashmap, const char* key, int value);
@@ -49,8 +50,14 @@ bool _resize_needed(HashMap* hashmap);
 void _resize_hashmap(HashMap* hashmap);
 uint64_t _hash_func(const char* key, uint64_t capacity);
 void _set_item(Item* item, const char* key, int value);
+HashMap _alloc_hashmap(size_t capacity);
 
-HashMap create_hashmap(size_t capacity) {
+
+HashMap create_hashmap() {
+    return _alloc_hashmap(INITIAL_CAPACITY);
+}
+
+HashMap _alloc_hashmap(size_t capacity) {
     return (HashMap) {
         .capacity = capacity,
             .array = calloc(capacity, sizeof(Item)),
@@ -81,7 +88,7 @@ bool _resize_needed(HashMap* hashmap) {
 void _resize_hashmap(HashMap* hashmap) {
     HashMap old_hashmap = *hashmap;
 
-    *hashmap = create_hashmap(hashmap->capacity * 2);
+    *hashmap = _alloc_hashmap(hashmap->capacity * 2);
 
     for (size_t i = 0; i < old_hashmap.capacity; i++) {
         Item* item = &old_hashmap.array[i];
@@ -97,7 +104,7 @@ void _resize_hashmap(HashMap* hashmap) {
 uint64_t _hash_func(const char* key, uint64_t capacity) {
     uint64_t hash_value = FNV_OFFSET_BASIS;
 
-    for (uint8_t c = 0; c < strlen(key); c++) {
+    for (size_t c = 0; c < strlen(key); c++) {
         hash_value ^= key[c];
         hash_value *= FNV_PRIME;
     }
@@ -109,20 +116,36 @@ void add_hashmap(HashMap* hashmap, const char* key, int value) {
     if (_resize_needed(hashmap)) {
         _resize_hashmap(hashmap);
     }
-    hashmap->len++;
-
     size_t index = _hash_func(key, hashmap->capacity);
+    Item* first_tombstone = NULL;
 
     for (size_t i = 0; i < hashmap->capacity; i++) {
         Item* item = &hashmap->array[(i + index) % hashmap->capacity];
 
         if (is_tombstone(item->flags)) {
+            if (!first_tombstone) {
+                first_tombstone = item;
+            }
             continue;
         }
 
-        if (!is_used(item->flags) || strcmp(item->key, key) == 0) {
-            _set_item(item, key, value);
+        if (is_used(item->flags)) {
+            if (strcmp(item->key, key) == 0) {
+                _set_item(item, key, value);
+                return;
+            }
+            continue;
         }
+
+        Item* target = first_tombstone ? first_tombstone : item;
+        hashmap->len++;
+        _set_item(target, key, value);
+        return;
+    }
+
+    if (first_tombstone) {
+        hashmap->len++;
+        _set_item(first_tombstone, key, value);
     }
 }
 
@@ -155,12 +178,15 @@ HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
 
 HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
     size_t index = _hash_func(key, hashmap->capacity);
-    hashmap->len--;
 
-    for (size_t i = 0; i < hashmap->len; i++) {
+    for (size_t i = 0; i < hashmap->capacity; i++) {
         Item* item = &hashmap->array[(i + index) % hashmap->capacity];
 
         if (is_tombstone(item->flags)) {
+            continue;
+        }
+
+        if (!is_used(item->flags)) {
             break;
         }
 
@@ -172,6 +198,7 @@ HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
                     .value = item->value
             };
             free(item->key);
+            hashmap->len--;
 
             return ret;
         }
@@ -184,6 +211,7 @@ HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
 
 void _set_item(Item* item, const char* key, int value) {
     if (!is_used(item->flags)) {
+        item->flags &= ~TOMBSTONE_FLAG;
         item->flags |= USED_FLAG;
         item->key = malloc(strlen(key) + 1);
         strcpy(item->key, key);
