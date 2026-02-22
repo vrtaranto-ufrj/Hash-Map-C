@@ -44,6 +44,7 @@ void free_hashmap(HashMap *hashmap);
 void add_hashmap(HashMap *hashmap, const char *key, int value);
 HashMapReturn get_hashmap(HashMap *hashmap, const char *key);
 HashMapReturn pop_hashmap(HashMap *hashmap, const char *key);
+void clear_hashmap(HashMap *hashmap);
 
 bool _resize_needed(HashMap *hashmap);
 void _resize_hashmap(HashMap *hashmap);
@@ -52,12 +53,6 @@ void _set_item(Item *item, const char *key, int value);
 HashMap _alloc_hashmap(size_t capacity);
 
 HashMap create_hashmap() { return _alloc_hashmap(INITIAL_CAPACITY); }
-
-HashMap _alloc_hashmap(size_t capacity) {
-    return (HashMap){.capacity = capacity,
-                     .array = calloc(capacity, sizeof(Item)),
-                     .len = 0};
-}
 
 void free_hashmap(HashMap *hashmap) {
     for (size_t i = 0; i < hashmap->capacity; i++) {
@@ -72,36 +67,6 @@ void free_hashmap(HashMap *hashmap) {
     hashmap->len = 0;
     hashmap->capacity = 0;
     hashmap->array = NULL;
-}
-
-bool _resize_needed(HashMap *hashmap) {
-    return hashmap->len * 100UL >= RESIZE_THRESHOLD * hashmap->capacity;
-}
-
-void _resize_hashmap(HashMap *hashmap) {
-    HashMap old_hashmap = *hashmap;
-
-    *hashmap = _alloc_hashmap(hashmap->capacity * 2);
-
-    for (size_t i = 0; i < old_hashmap.capacity; i++) {
-        Item *item = &old_hashmap.array[i];
-        if (is_used(item->flags)) {
-            add_hashmap(hashmap, item->key, item->value);
-        }
-    }
-
-    free_hashmap(&old_hashmap);
-}
-
-uint64_t _hash_func(const char *key, uint64_t capacity) {
-    uint64_t hash_value = FNV_OFFSET_BASIS;
-
-    for (const char *c = key; *c != '\0'; c++) {
-        hash_value ^= *c;
-        hash_value *= FNV_PRIME;
-    }
-
-    return hash_value & (capacity - 1);
 }
 
 void add_hashmap(HashMap *hashmap, const char *key, int value) {
@@ -191,6 +156,36 @@ HashMapReturn pop_hashmap(HashMap *hashmap, const char *key) {
     return (HashMapReturn){.found = false};
 }
 
+bool _resize_needed(HashMap *hashmap) {
+    return hashmap->len * 100UL >= RESIZE_THRESHOLD * hashmap->capacity;
+}
+
+void _resize_hashmap(HashMap *hashmap) {
+    HashMap old_hashmap = *hashmap;
+
+    *hashmap = _alloc_hashmap(hashmap->capacity * 2);
+
+    for (size_t i = 0; i < old_hashmap.capacity; i++) {
+        Item *item = &old_hashmap.array[i];
+        if (is_used(item->flags)) {
+            add_hashmap(hashmap, item->key, item->value);
+        }
+    }
+
+    free_hashmap(&old_hashmap);
+}
+
+uint64_t _hash_func(const char *key, uint64_t capacity) {
+    uint64_t hash_value = FNV_OFFSET_BASIS;
+
+    for (const char *c = key; *c != '\0'; c++) {
+        hash_value ^= *c;
+        hash_value *= FNV_PRIME;
+    }
+
+    return hash_value & (capacity - 1);
+}
+
 void _set_item(Item *item, const char *key, int value) {
     if (!is_used(item->flags)) {
         item->flags &= ~TOMBSTONE_FLAG;
@@ -200,4 +195,10 @@ void _set_item(Item *item, const char *key, int value) {
     }
 
     item->value = value;
+}
+
+HashMap _alloc_hashmap(size_t capacity) {
+    return (HashMap){.capacity = capacity,
+                     .array = calloc(capacity, sizeof(Item)),
+                     .len = 0};
 }
