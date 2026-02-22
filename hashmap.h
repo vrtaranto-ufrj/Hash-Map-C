@@ -35,6 +35,20 @@ HashMap create_hashmap(size_t len) {
     };
 }
 
+void free_hashmap(HashMap* hashmap) {
+    for (size_t i = 0; i < hashmap->len; i++) {
+        ListNode* nextnode = NULL;
+        for (ListNode* node = hashmap->array[i]; node; node = nextnode) {
+            nextnode = node->next;
+            free(node->key);
+            free(node);
+        }
+    }
+    free(hashmap->array);
+    hashmap->len = 0;
+    hashmap->array = NULL;
+}
+
 ListNode* alloc_list_node(const char* key, int value) {
     ListNode* node = malloc(sizeof(ListNode));
     size_t key_len = strlen(key);
@@ -97,6 +111,7 @@ HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
         ListNode* node = *pp;
         if (strcmp(node->key, key) == 0) {
             *pp = node->next;
+            free(node->next);
             free(node);
 
             return (HashMapReturn) {
