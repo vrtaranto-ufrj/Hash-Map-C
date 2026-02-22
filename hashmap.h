@@ -9,7 +9,7 @@
 #define FNV_OFFSET_BASIS   0xcbf29ce484222325UL
 
 #define INITIAL_CAPACITY   16ULL
-#define RESIZE_THRSHOLD    70UL
+#define RESIZE_THRESHOLD    70UL
 
 #define TOMBSTONE_FLAG     0b00000001
 #define USED_FLAG          0b00000010
@@ -82,7 +82,7 @@ void free_hashmap(HashMap* hashmap) {
 }
 
 bool _resize_needed(HashMap* hashmap) {
-    return hashmap->len * 100UL >= RESIZE_THRSHOLD * hashmap->capacity;
+    return hashmap->len * 100UL >= RESIZE_THRESHOLD * hashmap->capacity;
 }
 
 void _resize_hashmap(HashMap* hashmap) {
