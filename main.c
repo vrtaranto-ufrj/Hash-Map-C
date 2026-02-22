@@ -12,7 +12,7 @@ int main(int argc, char const *argv[]) {
     pop_hashmap(&hashmap, "1");
 
 
-    size_t n = hash_func("10", 4);
+    size_t n = _hash_func("10", 4);
     
     HashMapReturn a = get_hashmap(&hashmap, "5");
 

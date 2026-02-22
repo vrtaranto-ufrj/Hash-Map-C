@@ -45,9 +45,10 @@ void add_hashmap(HashMap* hashmap, const char* key, int value);
 HashMapReturn get_hashmap(HashMap* hashmap, const char* key);
 HashMapReturn pop_hashmap(HashMap* hashmap, const char* key);
 
-bool resize_needed(HashMap* hashmap);
-void resize_hashmap(HashMap* hashmap);
-uint64_t hash_func(const char* key, uint64_t capacity);
+bool _resize_needed(HashMap* hashmap);
+void _resize_hashmap(HashMap* hashmap);
+uint64_t _hash_func(const char* key, uint64_t capacity);
+void _set_item(Item* item, const char* key, int value);
 
 HashMap create_hashmap(size_t capacity) {
     return (HashMap) {
@@ -73,17 +74,17 @@ void free_hashmap(HashMap* hashmap) {
     hashmap->array = NULL;
 }
 
-bool resize_needed(HashMap* hashmap) {
+bool _resize_needed(HashMap* hashmap) {
     return hashmap->len * 100UL >= RESIZE_THRSHOLD * hashmap->capacity;
 }
 
-void resize_hashmap(HashMap* hashmap) {
+void _resize_hashmap(HashMap* hashmap) {
     HashMap old_hashmap = *hashmap;
 
     *hashmap = create_hashmap(hashmap->capacity * 2);
 
     for (size_t i = 0; i < old_hashmap.capacity; i++) {
-        Item *item = &old_hashmap.array[i];
+        Item* item = &old_hashmap.array[i];
         if (is_used(item->flags)) {
             add_hashmap(hashmap, item->key, item->value);
         }
@@ -93,7 +94,7 @@ void resize_hashmap(HashMap* hashmap) {
 }
 
 
-uint64_t hash_func(const char* key, uint64_t capacity) {
+uint64_t _hash_func(const char* key, uint64_t capacity) {
     uint64_t hash_value = FNV_OFFSET_BASIS;
 
     for (uint8_t c = 0; c < strlen(key); c++) {
@@ -105,12 +106,28 @@ uint64_t hash_func(const char* key, uint64_t capacity) {
 }
 
 void add_hashmap(HashMap* hashmap, const char* key, int value) {
-    if (resize_needed(hashmap)) {
-        resize_hashmap(hashmap);
+    if (_resize_needed(hashmap)) {
+        _resize_hashmap(hashmap);
     }
     hashmap->len++;
 
-    size_t index = hash_func(key, hashmap->capacity);
+    size_t index = _hash_func(key, hashmap->capacity);
+
+    for (size_t i = 0; i < hashmap->capacity; i++) {
+        Item* item = &hashmap->array[(i + index) % hashmap->capacity];
+
+        if (is_tombstone(item->flags)) {
+            continue;
+        }
+
+        if (!is_used(item->flags) || strcmp(item->key, key) == 0) {
+            _set_item(item, key, value);
+        }
+    }
+}
+
+HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
+    size_t index = _hash_func(key, hashmap->capacity);
 
     for (size_t i = 0; i < hashmap->capacity; i++) {
         Item* item = &hashmap->array[(i + index) % hashmap->capacity];
@@ -120,40 +137,14 @@ void add_hashmap(HashMap* hashmap, const char* key, int value) {
         }
 
         if (!is_used(item->flags)) {
-            item->value = value;
-            item->flags |= USED_FLAG;
-            item->key = malloc(strlen(key) + 1);
-            strcpy(item->key, key);
-            return;
+            break;
         }
+
         if (strcmp(item->key, key) == 0) {
-            item->value = value;
-            item->flags |= USED_FLAG;
-            return;
-        }
-    }
-}
-
-HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
-    size_t index = hash_func(key, hashmap->capacity);
-
-    for (size_t i = 0; i < hashmap->capacity; i++) {
-        Item* item = &hashmap->array[(i + index) % hashmap->capacity];
-
-        if (is_tombstone(item->flags)) {
-            break;
-        }
-
-        if (is_used(item->flags)) {
-            if (strcmp(item->key, key) == 0) {
-                return (HashMapReturn) {
-                    .found = true,
-                        .value = item->value
-                };
-            }
-        }
-        else {
-            break;
+            return (HashMapReturn) {
+                .found = true,
+                    .value = item->value
+            };
         }
     }
 
@@ -163,7 +154,7 @@ HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
 }
 
 HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
-    size_t index = hash_func(key, hashmap->capacity);
+    size_t index = _hash_func(key, hashmap->capacity);
     hashmap->len--;
 
     for (size_t i = 0; i < hashmap->len; i++) {
@@ -189,4 +180,14 @@ HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
     return (HashMapReturn) {
         .found = false
     };
+}
+
+void _set_item(Item* item, const char* key, int value) {
+    if (!is_used(item->flags)) {
+        item->flags |= USED_FLAG;
+        item->key = malloc(strlen(key) + 1);
+        strcpy(item->key, key);
+    }
+
+    item->value = value;
 }
