@@ -15,6 +15,8 @@ int main(int argc, char const *argv[]) {
 
     HashMapReturn a = get_hashmap(&hashmap, "5");
 
+    clear_hashmap(&hashmap);
+
     free_hashmap(&hashmap);
 
     return 0;

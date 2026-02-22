@@ -156,6 +156,19 @@ HashMapReturn pop_hashmap(HashMap *hashmap, const char *key) {
     return (HashMapReturn){.found = false};
 }
 
+void clear_hashmap(HashMap *hashmap) {
+    for (size_t i = 0; i < hashmap->capacity; i++) {
+        Item *item = &hashmap->array[i];
+
+        if (is_used(item->flags)) {
+            free(item->key);
+        }
+    }
+
+    memset(hashmap->array, 0, sizeof(Item) * hashmap->capacity);
+    hashmap->len = 0;
+}
+
 bool _resize_needed(HashMap *hashmap) {
     return hashmap->len * 100UL >= RESIZE_THRESHOLD * hashmap->capacity;
 }
