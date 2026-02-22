@@ -39,6 +39,17 @@ struct HashMapReturnStruct {
     bool found;
 };
 
+HashMap create_hashmap(size_t capacity);
+void free_hashmap(HashMap* hashmap);
+
+void add_hashmap(HashMap* hashmap, const char* key, int value);
+HashMapReturn get_hashmap(HashMap* hashmap, const char* key);
+HashMapReturn pop_hashmap(HashMap* hashmap, const char* key);
+
+bool resize_needed(HashMap* hashmap);
+void resize_hashmap(HashMap* hashmap);
+uint64_t hash_func(const char* key, uint64_t capacity);
+
 HashMap create_hashmap(size_t capacity) {
     return (HashMap) {
         .capacity = capacity,
@@ -56,7 +67,7 @@ void free_hashmap(HashMap* hashmap) {
         }
 
     }
-    
+
     free(hashmap->array);
     hashmap->len = 0;
     hashmap->capacity = 0;
@@ -64,11 +75,22 @@ void free_hashmap(HashMap* hashmap) {
 }
 
 bool resize_needed(HashMap* hashmap) {
-    return hashmap->len * 100UL >= RESIZE_THRSHOLD * hashmap->capacity * 100UL;
+    return hashmap->len * 100UL >= RESIZE_THRSHOLD * hashmap->capacity;
 }
 
 void resize_hashmap(HashMap* hashmap) {
-    return;
+    HashMap old_hashmap = *hashmap;
+
+    *hashmap = create_hashmap(hashmap->capacity * 2);
+
+    for (size_t i = 0; i < old_hashmap.capacity; i++) {
+        Item *item = &old_hashmap.array[i];
+        if (is_used(item->flags)) {
+            add_hashmap(hashmap, item->key, item->value);
+        }
+    }
+
+    free_hashmap(&old_hashmap);
 }
 
 
