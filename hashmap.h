@@ -48,11 +48,15 @@ HashMap create_hashmap(size_t capacity) {
 }
 
 void free_hashmap(HashMap* hashmap) {
-    for (size_t i = 0; i < hashmap->len; i++) {
-        Item item = hashmap->array[i];
+    for (size_t i = 0; i < hashmap->capacity; i++) {
+        Item* item = &hashmap->array[i];
 
-        free(item.key);
+        if (is_used(item->flags)) {
+            free(item->key);
+        }
+
     }
+    
     free(hashmap->array);
     hashmap->len = 0;
     hashmap->capacity = 0;
@@ -113,17 +117,22 @@ HashMapReturn get_hashmap(HashMap* hashmap, const char* key) {
     size_t index = hash_func(key, hashmap->capacity);
 
     for (size_t i = 0; i < hashmap->capacity; i++) {
-        Item item = hashmap->array[(i + index) % hashmap->capacity];
+        Item* item = &hashmap->array[(i + index) % hashmap->capacity];
 
-        if (is_tombstone(item.flags)) {
+        if (is_tombstone(item->flags)) {
             break;
         }
-    
-        if (strcmp(item.key, key) == 0) {
-            return (HashMapReturn) {
-                .found = true,
-                    .value = item.value
-            };
+
+        if (is_used(item->flags)) {
+            if (strcmp(item->key, key) == 0) {
+                return (HashMapReturn) {
+                    .found = true,
+                        .value = item->value
+                };
+            }
+        }
+        else {
+            break;
         }
     }
 
@@ -137,15 +146,15 @@ HashMapReturn pop_hashmap(HashMap* hashmap, const char* key) {
     hashmap->len--;
 
     for (size_t i = 0; i < hashmap->len; i++) {
-        Item *item = &hashmap->array[(i + index) % hashmap->capacity];
+        Item* item = &hashmap->array[(i + index) % hashmap->capacity];
 
         if (is_tombstone(item->flags)) {
             break;
         }
-    
+
         if (strcmp(item->key, key) == 0) {
             item->flags = TOMBSTONE_FLAG;
-            
+
             HashMapReturn ret = {
                 .found = true,
                     .value = item->value
