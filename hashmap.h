@@ -15,7 +15,6 @@
 
 #define is_tombstone(item_flag) (((item_flag) & TOMBSTONE_FLAG) != 0)
 #define is_used(item_flag)      (((item_flag) & USED_FLAG) != 0)
-#define is_valid(item_flag)     (!((item_flag) & (TOMBSTONE_FLAG | USED_FLAG)))
 
 
 typedef struct HashMapStruct HashMap;
