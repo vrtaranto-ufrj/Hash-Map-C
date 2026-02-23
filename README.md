@@ -21,5 +21,19 @@ Open addressing resolve colisões armazenando os elementos no próprio array e f
 ## Redimensionamento
 No `add_hashmap`, a carga é verificada antes de inserir. Quando a ocupação passa de `RESIZE_THRESHOLD` (70%), a tabela dobra de tamanho e todos os itens são reinseridos.
 
+## Testes
+Para compilar e rodar os testes localmente:
+
+```bash
+make test
+./test_hashmap
+```
+
+Se quiser compilar tudo (main e testes):
+
+```bash
+make
+```
+
 ## TODO
 As ideias e tarefas pendentes estão nos Issues do repositório.

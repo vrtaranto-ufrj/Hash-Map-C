@@ -5,7 +5,7 @@ on:
     branches: [ main ]
 
 jobs:
-  memory-leak-check:
+  tests:
     runs-on: ubuntu-latest
     
     steps:
@@ -19,6 +19,12 @@ jobs:
     
     - name: Compile program
       run: gcc -g main.c -o main
+
+    - name: Compile tests
+      run: gcc -g test_hashmap.c -o test_hashmap
+
+    - name: Run tests
+      run: ./test_hashmap
       
     - name: Run Valgrind memory check
       run: |

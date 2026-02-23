@@ -2,7 +2,7 @@
 
 #include "hashmap.h"
 
-int main(int argc, char const *argv[]) {
+int main(void) {
     HashMap hashmap = create_hashmap();
     add_hashmap(&hashmap, "1", 1);
     add_hashmap(&hashmap, "2", 2);
@@ -11,9 +11,7 @@ int main(int argc, char const *argv[]) {
 
     pop_hashmap(&hashmap, "1");
 
-    size_t n = _hash_func("10", 4);
-
-    HashMapReturn a = get_hashmap(&hashmap, "5");
+    // HashMapReturn a = get_hashmap(&hashmap, "5");
 
     clear_hashmap(&hashmap);
 

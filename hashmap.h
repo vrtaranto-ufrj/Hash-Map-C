@@ -17,6 +17,28 @@
 #define is_tombstone(item_flag) (((item_flag) & TOMBSTONE_FLAG) != 0)
 #define is_used(item_flag) (((item_flag) & USED_FLAG) != 0)
 
+#ifdef HASHMAP_BENCH
+static size_t hashmap_bench_add_probes = 0;
+static size_t hashmap_bench_get_probes = 0;
+static size_t hashmap_bench_pop_probes = 0;
+static size_t hashmap_bench_resizes = 0;
+static size_t hashmap_bench_mallocs = 0;
+static size_t hashmap_bench_frees = 0;
+static size_t hashmap_bench_alloc_bytes = 0;
+static int hashmap_bench_in_resize = 0;
+
+static inline void hashmap_bench_reset(void) {
+    hashmap_bench_add_probes = 0;
+    hashmap_bench_get_probes = 0;
+    hashmap_bench_pop_probes = 0;
+    hashmap_bench_resizes = 0;
+    hashmap_bench_mallocs = 0;
+    hashmap_bench_frees = 0;
+    hashmap_bench_alloc_bytes = 0;
+    hashmap_bench_in_resize = 0;
+}
+#endif
+
 typedef struct HashMapStruct HashMap;
 typedef struct ItemStruct Item;
 typedef struct HashMapReturnStruct HashMapReturn;
@@ -60,10 +82,18 @@ void free_hashmap(HashMap *hashmap) {
 
         if (is_used(item->flags)) {
             free(item->key);
+#ifdef HASHMAP_BENCH
+            hashmap_bench_frees++;
+#endif
         }
     }
 
     free(hashmap->array);
+#ifdef HASHMAP_BENCH
+    if (hashmap->array) {
+        hashmap_bench_frees++;
+    }
+#endif
     hashmap->len = 0;
     hashmap->capacity = 0;
     hashmap->array = NULL;
@@ -77,6 +107,11 @@ void add_hashmap(HashMap *hashmap, const char *key, int value) {
     Item *first_tombstone = NULL;
 
     for (size_t i = 0; i < hashmap->capacity; i++) {
+#ifdef HASHMAP_BENCH
+        if (!hashmap_bench_in_resize) {
+            hashmap_bench_add_probes++;
+        }
+#endif
         Item *item = &hashmap->array[(i + index) % hashmap->capacity];
 
         if (is_tombstone(item->flags)) {
@@ -110,6 +145,9 @@ HashMapReturn get_hashmap(HashMap *hashmap, const char *key) {
     size_t index = _hash_func(key, hashmap->capacity);
 
     for (size_t i = 0; i < hashmap->capacity; i++) {
+#ifdef HASHMAP_BENCH
+        hashmap_bench_get_probes++;
+#endif
         Item *item = &hashmap->array[(i + index) % hashmap->capacity];
 
         if (is_tombstone(item->flags)) {
@@ -132,6 +170,9 @@ HashMapReturn pop_hashmap(HashMap *hashmap, const char *key) {
     size_t index = _hash_func(key, hashmap->capacity);
 
     for (size_t i = 0; i < hashmap->capacity; i++) {
+#ifdef HASHMAP_BENCH
+        hashmap_bench_pop_probes++;
+#endif
         Item *item = &hashmap->array[(i + index) % hashmap->capacity];
 
         if (is_tombstone(item->flags)) {
@@ -147,6 +188,9 @@ HashMapReturn pop_hashmap(HashMap *hashmap, const char *key) {
 
             HashMapReturn ret = {.found = true, .value = item->value};
             free(item->key);
+#ifdef HASHMAP_BENCH
+            hashmap_bench_frees++;
+#endif
             hashmap->len--;
 
             return ret;
@@ -162,6 +206,9 @@ void clear_hashmap(HashMap *hashmap) {
 
         if (is_used(item->flags)) {
             free(item->key);
+#ifdef HASHMAP_BENCH
+            hashmap_bench_frees++;
+#endif
         }
     }
 
@@ -176,6 +223,11 @@ bool _resize_needed(HashMap *hashmap) {
 void _resize_hashmap(HashMap *hashmap) {
     HashMap old_hashmap = *hashmap;
 
+#ifdef HASHMAP_BENCH
+    hashmap_bench_resizes++;
+    hashmap_bench_in_resize = 1;
+#endif
+
     *hashmap = _alloc_hashmap(hashmap->capacity * 2);
 
     for (size_t i = 0; i < old_hashmap.capacity; i++) {
@@ -184,6 +236,10 @@ void _resize_hashmap(HashMap *hashmap) {
             add_hashmap(hashmap, item->key, item->value);
         }
     }
+
+#ifdef HASHMAP_BENCH
+    hashmap_bench_in_resize = 0;
+#endif
 
     free_hashmap(&old_hashmap);
 }
@@ -203,7 +259,14 @@ void _set_item(Item *item, const char *key, int value) {
     if (!is_used(item->flags)) {
         item->flags &= ~TOMBSTONE_FLAG;
         item->flags |= USED_FLAG;
-        item->key = malloc(strlen(key) + 1);
+        size_t key_len = strlen(key) + 1;
+        item->key = malloc(key_len);
+#ifdef HASHMAP_BENCH
+        if (item->key) {
+            hashmap_bench_mallocs++;
+            hashmap_bench_alloc_bytes += key_len;
+        }
+#endif
         strcpy(item->key, key);
     }
 
@@ -211,7 +274,12 @@ void _set_item(Item *item, const char *key, int value) {
 }
 
 HashMap _alloc_hashmap(size_t capacity) {
-    return (HashMap){.capacity = capacity,
-                     .array = calloc(capacity, sizeof(Item)),
-                     .len = 0};
+    Item *array = calloc(capacity, sizeof(Item));
+#ifdef HASHMAP_BENCH
+    if (array) {
+        hashmap_bench_mallocs++;
+        hashmap_bench_alloc_bytes += capacity * sizeof(Item);
+    }
+#endif
+    return (HashMap){.capacity = capacity, .array = array, .len = 0};
 }

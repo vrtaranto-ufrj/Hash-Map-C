@@ -36,6 +36,8 @@
 *.x86_64
 *.hex
 main
+test_hashmap
+bench_hashmap
 
 # Debug files
 *.dSYM/
@@ -54,3 +56,6 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+callgrind.out.*
+callgrind_report.txt
