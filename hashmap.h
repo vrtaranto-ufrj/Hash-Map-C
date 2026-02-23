@@ -10,6 +10,7 @@
 
 #define INITIAL_CAPACITY 16ULL
 #define RESIZE_THRESHOLD 70UL
+#define INITIAL_ARENA_CAPACITY 1024ULL
 
 #define TOMBSTONE_FLAG 0b00000001
 #define USED_FLAG 0b00000010
@@ -45,9 +46,10 @@ typedef struct HashMapReturnStruct HashMapReturn;
 
 typedef struct ArenaStruct Arena;
 typedef struct StringStruct String;
+typedef size_t ArenaOffset;
 
 struct ItemStruct {
-    char *key;
+    ArenaOffset key;
     int value;
     uint8_t flags;
 };
@@ -56,6 +58,7 @@ struct HashMapStruct {
     Item *array;
     size_t len;
     size_t capacity;
+    Arena *arena;
 };
 
 struct HashMapReturnStruct {
@@ -65,8 +68,8 @@ struct HashMapReturnStruct {
 
 struct ArenaStruct {
     char *memory;
-    size_t capacity;
-    size_t used;
+    ArenaOffset capacity;
+    ArenaOffset used;
 };
 
 struct StringStruct {
@@ -85,33 +88,31 @@ void clear_hashmap(HashMap *hashmap);
 bool _resize_needed(HashMap *hashmap);
 void _resize_hashmap(HashMap *hashmap);
 uint64_t _hash_func(const char *key, uint64_t capacity);
-void _set_item(Item *item, const char *key, int value);
-HashMap _alloc_hashmap(size_t capacity);
+void _set_item(HashMap *hashmap, Item *item, const char *key, int value);
+HashMap _alloc_hashmap(size_t capacity, Arena *arena);
+void _free_hashmap(HashMap *hashmap, bool free_arena);
 
 Arena _create_arena(size_t initial_capacity);
 void _free_arena(Arena *arena);
 void _clear_arena(Arena *arena);
 
 bool _arena_resize(Arena *arena);
-size_t _arena_alloc_string(Arena *arena, const char *str, size_t len);
+ArenaOffset _arena_alloc_string(Arena *arena, const char *str, size_t len);
 String _arena_get_string(Arena *arena, size_t offset);
 bool _arena_string_equals(Arena *arena, size_t offset, const char *key);
 
-HashMap create_hashmap() { return _alloc_hashmap(INITIAL_CAPACITY); }
+HashMap create_hashmap() { return _alloc_hashmap(INITIAL_CAPACITY, NULL); }
 
 void free_hashmap(HashMap *hashmap) {
-    for (size_t i = 0; i < hashmap->capacity; i++) {
-        Item *item = &hashmap->array[i];
+    _free_hashmap(hashmap, true);
+}
 
-        if (is_used(item->flags)) {
-            free(item->key);
-#ifdef HASHMAP_BENCH
-            hashmap_bench_frees++;
-#endif
-        }
-    }
-
+void _free_hashmap(HashMap *hashmap, bool free_arena) {
     free(hashmap->array);
+    if (free_arena) {
+        _free_arena(hashmap->arena);
+        free(hashmap->arena);
+    }
 #ifdef HASHMAP_BENCH
     if (hashmap->array) {
         hashmap_bench_frees++;
@@ -145,8 +146,8 @@ void add_hashmap(HashMap *hashmap, const char *key, int value) {
         }
 
         if (is_used(item->flags)) {
-            if (strcmp(item->key, key) == 0) {
-                _set_item(item, key, value);
+            if (_arena_string_equals(hashmap->arena, item->key, key)) {
+                _set_item(hashmap, item, key, value);
                 return;
             }
             continue;
@@ -154,13 +155,13 @@ void add_hashmap(HashMap *hashmap, const char *key, int value) {
 
         Item *target = first_tombstone ? first_tombstone : item;
         hashmap->len++;
-        _set_item(target, key, value);
+        _set_item(hashmap, target, key, value);
         return;
     }
 
     if (first_tombstone) {
         hashmap->len++;
-        _set_item(first_tombstone, key, value);
+        _set_item(hashmap, first_tombstone, key, value);
     }
 }
 
@@ -181,7 +182,7 @@ HashMapReturn get_hashmap(HashMap *hashmap, const char *key) {
             break;
         }
 
-        if (strcmp(item->key, key) == 0) {
+        if (_arena_string_equals(hashmap->arena, item->key, key)) {
             return (HashMapReturn){.found = true, .value = item->value};
         }
     }
@@ -206,11 +207,10 @@ HashMapReturn pop_hashmap(HashMap *hashmap, const char *key) {
             break;
         }
 
-        if (strcmp(item->key, key) == 0) {
+        if (_arena_string_equals(hashmap->arena, item->key, key)) {
             item->flags = TOMBSTONE_FLAG;
 
             HashMapReturn ret = {.found = true, .value = item->value};
-            free(item->key);
 #ifdef HASHMAP_BENCH
             hashmap_bench_frees++;
 #endif
@@ -224,17 +224,7 @@ HashMapReturn pop_hashmap(HashMap *hashmap, const char *key) {
 }
 
 void clear_hashmap(HashMap *hashmap) {
-    for (size_t i = 0; i < hashmap->capacity; i++) {
-        Item *item = &hashmap->array[i];
-
-        if (is_used(item->flags)) {
-            free(item->key);
-#ifdef HASHMAP_BENCH
-            hashmap_bench_frees++;
-#endif
-        }
-    }
-
+    _clear_arena(hashmap->arena);
     memset(hashmap->array, 0, sizeof(Item) * hashmap->capacity);
     hashmap->len = 0;
 }
@@ -251,12 +241,12 @@ void _resize_hashmap(HashMap *hashmap) {
     hashmap_bench_in_resize = 1;
 #endif
 
-    *hashmap = _alloc_hashmap(hashmap->capacity * 2);
+    *hashmap = _alloc_hashmap(hashmap->capacity * 2, hashmap->arena);
 
     for (size_t i = 0; i < old_hashmap.capacity; i++) {
         Item *item = &old_hashmap.array[i];
         if (is_used(item->flags)) {
-            add_hashmap(hashmap, item->key, item->value);
+            add_hashmap(hashmap, _arena_get_string(hashmap->arena, item->key).string, item->value);
         }
     }
 
@@ -264,7 +254,7 @@ void _resize_hashmap(HashMap *hashmap) {
     hashmap_bench_in_resize = 0;
 #endif
 
-    free_hashmap(&old_hashmap);
+    _free_hashmap(&old_hashmap, false);
 }
 
 uint64_t _hash_func(const char *key, uint64_t capacity) {
@@ -278,33 +268,30 @@ uint64_t _hash_func(const char *key, uint64_t capacity) {
     return hash_value & (capacity - 1);
 }
 
-void _set_item(Item *item, const char *key, int value) {
+void _set_item(HashMap *hashmap, Item *item, const char *key, int value) {
     if (!is_used(item->flags)) {
         item->flags &= ~TOMBSTONE_FLAG;
         item->flags |= USED_FLAG;
-        size_t key_len = strlen(key) + 1;
-        item->key = malloc(key_len);
-#ifdef HASHMAP_BENCH
-        if (item->key) {
-            hashmap_bench_mallocs++;
-            hashmap_bench_alloc_bytes += key_len;
-        }
-#endif
-        strcpy(item->key, key);
+        item->key = _arena_alloc_string(hashmap->arena, key, strlen(key));
     }
 
     item->value = value;
 }
 
-HashMap _alloc_hashmap(size_t capacity) {
+HashMap _alloc_hashmap(size_t capacity, Arena *arena) {
     Item *array = calloc(capacity, sizeof(Item));
+    if (!arena) {
+        arena = malloc(sizeof(Arena));
+        *arena = _create_arena(INITIAL_ARENA_CAPACITY);
+    }
 #ifdef HASHMAP_BENCH
     if (array) {
         hashmap_bench_mallocs++;
         hashmap_bench_alloc_bytes += capacity * sizeof(Item);
     }
 #endif
-    return (HashMap){.capacity = capacity, .array = array, .len = 0};
+    return (HashMap){
+        .capacity = capacity, .array = array, .len = 0, .arena = arena};
 }
 
 Arena _create_arena(size_t initial_capacity) {
@@ -324,18 +311,18 @@ void _free_arena(Arena *arena) {
 void _clear_arena(Arena *arena) { arena->used = 0; }
 
 bool _arena_resize(Arena *arena) {
-    arena->capacity *= 2;
-    char *new_memory = realloc(arena->memory, arena->capacity);
+    char *new_memory = realloc(arena->memory, arena->capacity * 2);
     if (!new_memory) {
         return false;
     }
+    arena->capacity *= 2;
     arena->memory = new_memory;
 
     return true;
 }
 
-size_t _arena_alloc_string(Arena *arena, const char *str, size_t len) {
-    if (arena->used + len + sizeof(size_t) > arena->capacity) {
+ArenaOffset _arena_alloc_string(Arena *arena, const char *str, size_t len) {
+    while (arena->used + len + 1 + sizeof(size_t) > arena->capacity) {
         if (!_arena_resize(arena)) {
             abort();
         }
@@ -343,19 +330,19 @@ size_t _arena_alloc_string(Arena *arena, const char *str, size_t len) {
     size_t old_used = arena->used;
 
     *(size_t *)(arena->memory + old_used) = len;
-    memcpy(arena->memory + old_used + sizeof(size_t), str, len);
+    memcpy(arena->memory + old_used + sizeof(size_t), str, len + 1);
 
-    arena->used += sizeof(len) + len;
+    arena->used += sizeof(len) + len + 1;
 
     return old_used;
 }
 
-static inline String _arena_get_string(Arena *arena, size_t offset) {
+String _arena_get_string(Arena *arena, ArenaOffset offset) {
     return (String){.len = *(size_t *)(arena->memory + offset),
                     .string = arena->memory + offset + sizeof(size_t)};
 }
 
-bool _arena_string_equals(Arena *arena, size_t offset, const char *key) {
+bool _arena_string_equals(Arena *arena, ArenaOffset offset, const char *key) {
     String str = _arena_get_string(arena, offset);
     size_t key_len = strlen(key);
 
@@ -363,14 +350,4 @@ bool _arena_string_equals(Arena *arena, size_t offset, const char *key) {
         return false;
 
     return memcmp(str.string, key, key_len) == 0;
-}
-
-bool _string_equals(String *string, const char *key) {
-    size_t key_len = strlen(key);
-
-    if (string->len != key_len) {
-        return false;
-    }
-
-    return memcmp(string->string, key, key_len) == 0;
 }
