@@ -17,5 +17,8 @@ int main(void) {
 
     free_hashmap(&hashmap);
 
+    Arena a = _create_arena(100);
+    size_t si = _arena_alloc_string(&a, "Ola", sizeof("Ola"));
+
     return 0;
 }
